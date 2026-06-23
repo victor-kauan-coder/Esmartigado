@@ -4,65 +4,51 @@ import Combine
 /// Configuração de conexão com o Node-RED
 enum IoTConfig {
     /// URL base do Node-RED (ajuste para IP da sua rede local)
-    static let baseURL = "http://127.0.0.1:1880/"
-    static let apiPath = "/api/esmartigado"
-    static let wsPath = "/ws/esmartigado"
+    static let baseURL = "http://127.0.0.1:1880"
 
-    static var dashboardURL: URL {
-        URL(string: "\(baseURL)\(apiPath)/dashboard")!
-    }
+    /// Endpoint REST de animais (CRUD) — fonte de dados real do app.
+    static let animaisURLString = "\(baseURL)/animais"
 
-    static var statusURL: URL {
-        URL(string: "\(baseURL)\(apiPath)/status")!
-    }
-
-    static var sensorsURL: URL {
-        URL(string: "\(baseURL)\(apiPath)/sensors")!
-    }
-
-    static var wsURL: URL {
-        URL(string: "ws://192.168.1.100:1880\(wsPath)")!
+    static var animaisURL: URL {
+        URL(string: animaisURLString)!
     }
 }
 
 @MainActor
 final class IoTService: ObservableObject {
+    @Published var animais: [Animal] = []
     @Published var corralStatus: CorralStatus?
     @Published var dashboard: DashboardData = .preview
     @Published var isConnected = false
     @Published var lastError: String?
 
-    private var webSocketTask: URLSessionWebSocketTask?
+    // Estado do sensor de ração (flow "Sensor Completo")
+    @Published var ultimaRacao: RacaoLeitura?
+    @Published var historicoRacao: [RacaoLeitura] = []
+    @Published var horarioAlarme: String?
+
+    private let api = AnimaisAPI()
+    private let racaoAPI = RacaoAPI()
     private var pollingTimer: Timer?
     private var hasStarted = false
-    private let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
-    }()
 
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
         startPolling()
-        connectWebSocket()
     }
 
     deinit {
         pollingTimer?.invalidate()
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
     }
 
-    // MARK: - REST API (Node-RED HTTP endpoints)
+    // MARK: - REST API (/animais)
 
-    func fetchDashboard() async {
+    func fetchAnimais() async {
         do {
-            let (data, response) = try await URLSession.shared.data(from: IoTConfig.dashboardURL)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                isConnected = false
-                return
-            }
-            let status = try decoder.decode(CorralStatus.self, from: data)
+            let lista = try await api.listar()
+            animais = lista
+            let status = makeCorralStatus(from: lista)
             corralStatus = status
             dashboard = mapToDashboard(status)
             isConnected = true
@@ -73,73 +59,132 @@ final class IoTService: ObservableObject {
         }
     }
 
-    func fetchSensors() async -> [ZoneStatus] {
+    func criarAnimal(nome: String, raca: String, idade: Int, sexo: String,
+                     pesoAtual: Double, consumoDiario: Double,
+                     custoAlimentacao: Double, valorMercado: Double) async {
+        let body: [String: Any] = [
+            "nome": nome, "raca": raca, "idade": idade, "sexo": sexo,
+            "pesoAtual": pesoAtual, "consumoDiario": consumoDiario,
+            "custoAlimentacao": custoAlimentacao, "valorMercado": valorMercado
+        ]
         do {
-            let (data, _) = try await URLSession.shared.data(from: IoTConfig.sensorsURL)
-            return try decoder.decode([ZoneStatus].self, from: data)
+            try await api.criar(animal: body)
+            await fetchAnimais()
         } catch {
-            return corralStatus?.zones ?? []
+            lastError = "Erro ao criar: \(error.localizedDescription)"
         }
     }
 
-    // MARK: - WebSocket (eventos em tempo real do Node-RED)
-
-    func connectWebSocket() {
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
-        webSocketTask = URLSession.shared.webSocketTask(with: IoTConfig.wsURL)
-        webSocketTask?.resume()
-        receiveMessage()
-    }
-
-    private func receiveMessage() {
-        webSocketTask?.receive { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let message):
-                Task { @MainActor in
-                    self.handleWebSocketMessage(message)
-                    self.receiveMessage()
-                }
-            case .failure:
-                Task { @MainActor in
-                    self.isConnected = false
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
-                    self.connectWebSocket()
-                }
-            }
+    func atualizarAnimal(_ animal: Animal) async {
+        do {
+            try await api.atualizar(animal: animal)
+            await fetchAnimais()
+        } catch {
+            lastError = "Erro ao atualizar: \(error.localizedDescription)"
         }
     }
 
-    private func handleWebSocketMessage(_ message: URLSessionWebSocketTask.Message) {
-        guard case .string(let text) = message,
-              let data = text.data(using: .utf8) else { return }
-
-        if let event = try? decoder.decode(PresenceEvent.self, from: data) {
-            appendActivity(from: event)
-        } else if let status = try? decoder.decode(CorralStatus.self, from: data) {
-            corralStatus = status
-            dashboard = mapToDashboard(status)
-            isConnected = true
+    func deletarAnimal(id: Int) async {
+        do {
+            try await api.deletar(id: id)
+            await fetchAnimais()
+        } catch {
+            lastError = "Erro ao deletar: \(error.localizedDescription)"
         }
     }
 
-    // MARK: - Polling fallback
+    /// Compatibilidade com a TrackingView. A API de animais não expõe
+    /// dados de sensores/zonas, portanto retorna o que houver em cache.
+    func fetchSensors() async -> [ZoneStatus] {
+        corralStatus?.zones ?? []
+    }
+
+    // MARK: - Sensor de ração (/api/*)
+
+    func fetchRacao() async {
+        async let ultima = try? racaoAPI.ultimaLeitura()
+        async let hist = try? racaoAPI.historico()
+        if let leitura = await ultima {
+            ultimaRacao = leitura
+        }
+        if let lista = await hist {
+            historicoRacao = lista
+        }
+    }
+
+    /// Solicita uma nova medição e atualiza a leitura logo em seguida.
+    func medirRacao() async {
+        do {
+            try await racaoAPI.medir()
+            // A placa responde de forma assíncrona via WebSocket; aguarda
+            // um instante antes de buscar a leitura atualizada.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await fetchRacao()
+        } catch {
+            lastError = "Erro ao medir: \(error.localizedDescription)"
+        }
+    }
+
+    func definirAlarmeRacao(hora: String) async {
+        do {
+            try await racaoAPI.definirAlarme(hora: hora)
+            horarioAlarme = hora
+        } catch {
+            lastError = "Erro ao definir alarme: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Polling
 
     private func startPolling() {
         pollingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                await self?.fetchDashboard()
+                await self?.fetchAnimais()
+                await self?.fetchRacao()
             }
         }
-        Task { await fetchDashboard() }
+        Task {
+            await fetchAnimais()
+            await fetchRacao()
+        }
     }
 
-    // MARK: - Mapping
+    // MARK: - Derivação dos dados a partir dos animais
+
+    /// Constrói um `CorralStatus` agregado a partir da lista de animais.
+    private func makeCorralStatus(from animais: [Animal]) -> CorralStatus {
+        let total = animais.count
+        let consumoDiario = animais.reduce(0) { $0 + $1.consumoDiario }
+        let receita = animais.reduce(0) { $0 + $1.lucroEstimado }
+
+        let alertas = animais
+            .filter { $0.lucroEstimado < 0 }
+            .map { animal in
+                AlertPayload(
+                    id: "lucro-\(animal.id)",
+                    type: "default",
+                    title: "Lucro negativo",
+                    subtitle: "\(animal.nome) está com prejuízo estimado",
+                    time: "Hoje"
+                )
+            }
+
+        return CorralStatus(
+            totalAnimals: total,
+            animalsInCorral: total,
+            monitoredOnline: total,
+            feedScheduled: total,
+            feedConsumptionKg: consumoDiario,
+            feedGoalKg: consumoDiario,
+            monthlyRevenue: receita,
+            alerts: alertas,
+            recentActivities: [],
+            zones: [],
+            lastUpdated: Date()
+        )
+    }
 
     private func mapToDashboard(_ status: CorralStatus) -> DashboardData {
-        let inCorralPct = status.totalAnimals > 0
-            ? Int(Double(status.animalsInCorral) / Double(status.totalAnimals) * 100)
-            : 0
         let feedPct = status.feedGoalKg > 0
             ? status.feedConsumptionKg / status.feedGoalKg
             : 0
@@ -151,24 +196,27 @@ final class IoTService: ObservableObject {
             weatherDescription: dashboard.weatherDescription,
             overview: [
                 OverviewMetric(icon: "pawprint.fill", iconColor: "green",
-                               value: "\(status.totalAnimals)", label: "Total", subtitle: "+ 8 este mês"),
-                OverviewMetric(icon: "square.grid.2x2.fill", iconColor: "yellow",
-                               value: "\(status.animalsInCorral)", label: "No curral",
-                               subtitle: "\(inCorralPct)% do total"),
+                               value: "\(status.totalAnimals)", label: "Total", subtitle: "Rebanho cadastrado"),
+                OverviewMetric(icon: "scalemass.fill", iconColor: "yellow",
+                               value: String(format: "%.0f kg", averageWeight()), label: "Peso médio",
+                               subtitle: "Por animal"),
                 OverviewMetric(icon: "leaf.fill", iconColor: "blue",
-                               value: "\(status.feedScheduled)", label: "Alimentação", subtitle: "Programados"),
-                OverviewMetric(icon: "location.fill", iconColor: "purple",
-                               value: "\(status.monitoredOnline)", label: "Monitorados", subtitle: "Online")
+                               value: String(format: "%.0f kg", status.feedConsumptionKg), label: "Consumo diário",
+                               subtitle: "Total do rebanho"),
+                OverviewMetric(icon: "dollarsign.circle.fill", iconColor: "purple",
+                               value: formatCurrency(totalMarketValue()), label: "Valor de mercado",
+                               subtitle: "Rebanho total")
             ],
             indicators: [
                 DailyIndicator(title: "Consumo de ração",
                                value: String(format: "%.0f kg", status.feedConsumptionKg),
                                progress: feedPct, progressLabel: String(format: "%.0f%% da meta diária", feedPct * 100),
                                trend: nil, trendUp: nil),
-                DailyIndicator(title: "Receita do mês",
+                DailyIndicator(title: "Lucro estimado",
                                value: formatCurrency(status.monthlyRevenue),
                                progress: nil, progressLabel: nil,
-                               trend: "↑ 12% em relação ao mês anterior", trendUp: true)
+                               trend: status.monthlyRevenue >= 0 ? "Resultado positivo" : "Resultado negativo",
+                               trendUp: status.monthlyRevenue >= 0)
             ],
             alerts: status.alerts.map {
                 AlertItem(icon: alertIcon(for: $0.type), iconColor: alertColor(for: $0.type),
@@ -180,22 +228,23 @@ final class IoTService: ObservableObject {
         )
     }
 
-    private func appendActivity(from event: PresenceEvent) {
-        let desc: String
-        switch event.eventType {
-        case .entered:
-            desc = "Animal \(event.animalTag ?? event.sensorId) (\(event.animalName ?? "")) entrou em \(event.zone)"
-        case .exited:
-            desc = "Animal \(event.animalTag ?? event.sensorId) saiu de \(event.zone)"
-        case .outOfBounds:
-            desc = "Animal \(event.animalTag ?? "?") fora da área permitida em \(event.zone)"
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        let activity = ActivityItem(icon: "arrow.right.circle.fill", description: desc,
-                                    time: formatter.string(from: event.timestamp))
-        dashboard.activities.insert(activity, at: 0)
+    // MARK: - Métricas derivadas (expostas às telas)
+
+    func averageWeight() -> Double {
+        guard !animais.isEmpty else { return 0 }
+        return animais.reduce(0) { $0 + $1.pesoAtual } / Double(animais.count)
     }
+
+    func totalMarketValue() -> Double {
+        animais.reduce(0) { $0 + $1.valorMercado }
+    }
+
+    /// Custo mensal de alimentação do rebanho (custo diário × 30).
+    func monthlyFeedingCost() -> Double {
+        animais.reduce(0) { $0 + $1.custoAlimentacao } * 30
+    }
+
+    // MARK: - Helpers
 
     private func formatCurrency(_ value: Double) -> String {
         let f = NumberFormatter()
@@ -209,7 +258,7 @@ final class IoTService: ObservableObject {
         case "vaccine": return "syringe.fill"
         case "feeding": return "bowl.fill"
         case "out_of_bounds": return "exclamationmark.triangle.fill"
-        default: return "bell.fill"
+        default: return "exclamationmark.circle.fill"
         }
     }
 
@@ -218,7 +267,7 @@ final class IoTService: ObservableObject {
         case "vaccine": return "pink"
         case "feeding": return "yellow"
         case "out_of_bounds": return "red"
-        default: return "gray"
+        default: return "red"
         }
     }
 }

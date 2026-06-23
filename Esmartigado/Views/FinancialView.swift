@@ -38,11 +38,14 @@ struct FinancialView: View {
     }
 
     private var costsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let feedingCost = iotService.monthlyFeedingCost()
+
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Custos")
                 .font(.headline)
 
-            costRow(title: "Alimentação", value: 4230, icon: "leaf.fill", color: AppTheme.accentBlue)
+            costRow(title: "Alimentação", value: feedingCost > 0 ? feedingCost : 4230,
+                    icon: "leaf.fill", color: AppTheme.accentBlue)
             costRow(title: "Sanidade", value: 1850, icon: "syringe.fill", color: AppTheme.alertPink)
             costRow(title: "Manutenção", value: 920, icon: "wrench.fill", color: AppTheme.accentYellow)
         }
