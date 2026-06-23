@@ -4,57 +4,109 @@ import Charts
 struct FeedingView: View {
     @EnvironmentObject var iotService: IoTService
     @State private var isMeasuring = false
-    @State private var alarmTime = Date()
-    @State private var alarmSaved = false
+    @State private var periodo: PeriodoConsumo = .semana
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    racaoLevelCard
+                    statusCards
+                    levelCard
                     measureButton
+                    consumoSection
+                    managementLinks
                     historySection
-                    alarmSection
-                    herdConsumptionCard
                 }
                 .padding()
             }
             .background(AppTheme.background)
             .navigationTitle("Alimentação")
-            .task { await iotService.fetchRacao() }
-            .refreshable { await iotService.fetchRacao() }
+            .task { await loadAll() }
+            .refreshable { await loadAll() }
         }
     }
 
-    // MARK: - Nível de ração (sensor)
+    private func loadAll() async {
+        await iotService.fetchRacao()
+        await iotService.fetchConfig()
+        await iotService.fetchConsumo(periodo: periodo)
+    }
 
-    private var racaoLevelCard: some View {
+    // MARK: - Cards de percentual e peso
+
+    private var statusCards: some View {
+        let leitura = iotService.ultimaRacao
+        return HStack(spacing: 12) {
+            metricCard(
+                title: "Nível de ração",
+                value: percentualText(leitura),
+                icon: "chart.bar.fill",
+                color: percentualColor(leitura)
+            )
+            metricCard(
+                title: "Peso estimado",
+                value: pesoText(leitura),
+                icon: "scalemass.fill",
+                color: AppTheme.accentBlue
+            )
+        }
+    }
+
+    private func metricCard(title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.title.bold())
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+
+    // MARK: - Card de nível/distância
+
+    private var levelCard: some View {
         let leitura = iotService.ultimaRacao
         let critico = leitura?.isCritico ?? false
         let semLeitura = leitura?.semLeitura ?? true
+        let foraAlcance = leitura?.foraDeAlcance ?? false
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Nível de ração")
+                Text("Sensor")
                     .font(.headline)
                 Spacer()
-                statusBadge(critico: critico, semLeitura: semLeitura)
+                statusBadge(critico: critico, semLeitura: semLeitura, foraAlcance: foraAlcance)
             }
 
-            if let dist = leitura?.distanciaCm {
+            if foraAlcance {
+                Text("Sensor fora de alcance")
+                    .font(.title3.bold())
+                    .foregroundStyle(AppTheme.alertRed)
+                Text("Verifique o posicionamento do sensor no recipiente")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            } else if let dist = leitura?.distanciaCm {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(String(format: "%.0f", dist))
-                        .font(.system(size: 48, weight: .bold))
+                        .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(critico ? AppTheme.alertRed : AppTheme.primaryGreen)
                     Text("cm de distância")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.textSecondary)
                 }
-                Text(critico
-                     ? "Ração baixa — reabasteça o recipiente"
-                     : "Nível adequado de ração")
-                    .font(.caption)
-                    .foregroundStyle(critico ? AppTheme.alertRed : AppTheme.textSecondary)
+                if leitura?.semConfiguracao == true {
+                    Text("Calibre o recipiente para ver o percentual e o peso")
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.accentYellow)
+                }
             } else {
                 Text("Sem medição ainda")
                     .font(.title3.bold())
@@ -77,9 +129,19 @@ struct FeedingView: View {
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 
-    private func statusBadge(critico: Bool, semLeitura: Bool) -> some View {
-        let color = semLeitura ? AppTheme.textSecondary : (critico ? AppTheme.alertRed : AppTheme.primaryGreen)
-        let text = semLeitura ? "—" : (critico ? "CRÍTICO" : "NORMAL")
+    private func statusBadge(critico: Bool, semLeitura: Bool, foraAlcance: Bool) -> some View {
+        let color: Color
+        let text: String
+        if semLeitura || foraAlcance {
+            color = AppTheme.textSecondary
+            text = "—"
+        } else if critico {
+            color = AppTheme.alertRed
+            text = "CRÍTICO"
+        } else {
+            color = AppTheme.primaryGreen
+            text = "NORMAL"
+        }
         return Text(text)
             .font(.caption.bold())
             .padding(.horizontal, 10)
@@ -99,8 +161,7 @@ struct FeedingView: View {
         } label: {
             HStack {
                 if isMeasuring {
-                    ProgressView()
-                        .tint(.white)
+                    ProgressView().tint(.white)
                 } else {
                     Image(systemName: "ruler")
                 }
@@ -116,140 +177,155 @@ struct FeedingView: View {
         .disabled(isMeasuring)
     }
 
+    // MARK: - Consumo
+
+    private var consumoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Consumo de ração")
+                    .font(.headline)
+                Spacer()
+                if let total = iotService.consumo?.total {
+                    Text(String(format: "%.1f kg", total))
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppTheme.primaryGreen)
+                }
+            }
+
+            Picker("Período", selection: $periodo) {
+                ForEach(PeriodoConsumo.allCases) { p in
+                    Text(p.titulo).tag(p)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: periodo) { _, novo in
+                Task { await iotService.fetchConsumo(periodo: novo) }
+            }
+
+            let dias = iotService.consumo?.consumoPorDia ?? []
+            if dias.isEmpty {
+                Text("Sem dados de consumo no período")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
+            } else {
+                Chart(dias) { dia in
+                    BarMark(
+                        x: .value("Dia", dia.data),
+                        y: .value("Consumo (kg)", dia.consumo)
+                    )
+                    .foregroundStyle(AppTheme.primaryGreen)
+                }
+                .frame(height: 180)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+
+    // MARK: - Links de gestão
+
+    private var managementLinks: some View {
+        VStack(spacing: 0) {
+            NavigationLink {
+                RacaoConfigView()
+            } label: {
+                linkRow(icon: "slider.horizontal.3", title: "Configuração do recipiente",
+                        subtitle: iotService.configRecipiente?.configurado == true ? "Calibrado" : "Não calibrado")
+            }
+            Divider().padding(.leading, 52)
+            NavigationLink {
+                AlarmesView()
+            } label: {
+                linkRow(icon: "alarm", title: "Alarmes de medição",
+                        subtitle: "\(iotService.alarmes.count) horário(s)")
+            }
+        }
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+
+    private func linkRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(AppTheme.primaryGreen)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .padding()
+    }
+
     // MARK: - Histórico
 
     @ViewBuilder
     private var historySection: some View {
-        let pontos: [RacaoPonto] = iotService.historicoRacao
-            .reversed()
-            .compactMap { $0.distanciaCm }
-            .enumerated()
-            .map { RacaoPonto(indice: $0.offset, distancia: $0.element) }
-
-        if pontos.count > 1 {
-            VStack(alignment: .leading, spacing: 12) {
+        let leituras = iotService.historicoRacao
+        if !leituras.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Histórico de leituras")
                     .font(.headline)
 
-                Chart(pontos) { ponto in
-                    LineMark(
-                        x: .value("Leitura", ponto.indice),
-                        y: .value("Distância (cm)", ponto.distancia)
-                    )
-                    .foregroundStyle(AppTheme.accentBlue)
-
-                    PointMark(
-                        x: .value("Leitura", ponto.indice),
-                        y: .value("Distância (cm)", ponto.distancia)
-                    )
-                    .foregroundStyle(ponto.distancia > 30 ? AppTheme.alertRed : AppTheme.primaryGreen)
-                }
-                .frame(height: 180)
-
-                RuleMarkLegend()
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
-        }
-    }
-
-    // MARK: - Alarme
-
-    private var alarmSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Horário do alarme")
-                .font(.headline)
-
-            Text("No horário definido, o sistema dispara uma medição automática todos os dias.")
-                .font(.caption)
-                .foregroundStyle(AppTheme.textSecondary)
-
-            HStack {
-                DatePicker("", selection: $alarmTime, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                Spacer()
-                Button("Salvar") {
-                    Task {
-                        await iotService.definirAlarmeRacao(hora: horaString(alarmTime))
-                        alarmSaved = true
+                ForEach(leituras.prefix(15)) { leitura in
+                    HStack {
+                        Circle()
+                            .fill(leitura.isCritico ? AppTheme.alertRed : AppTheme.primaryGreen)
+                            .frame(width: 8, height: 8)
+                        Text(leitura.hora ?? "—")
+                            .font(.caption)
+                        Spacer()
+                        if let p = leitura.percentualRacao {
+                            Text(String(format: "%.0f%%", p))
+                                .font(.caption.bold())
+                        }
+                        if let d = leitura.distanciaCm {
+                            Text(String(format: "%.0f cm", d))
+                                .font(.caption2)
+                                .foregroundStyle(AppTheme.textSecondary)
+                        }
                     }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal)
+                    .background(AppTheme.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                .font(.subheadline.bold())
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(AppTheme.accentBlue)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-
-            if let hora = iotService.horarioAlarme {
-                Label("Alarme definido para \(hora)", systemImage: "alarm")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.primaryGreen)
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 
-    // MARK: - Consumo do rebanho (derivado de /animais)
+    // MARK: - Formatação
 
-    private var herdConsumptionCard: some View {
-        let consumo = iotService.corralStatus?.feedConsumptionKg ?? 0
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Consumo diário do rebanho")
-                .font(.headline)
-            Text(String(format: "%.0f kg/dia", consumo))
-                .font(.title2.bold())
-                .foregroundStyle(AppTheme.primaryGreen)
-            Text("Soma do consumo diário de \(iotService.animais.count) animais")
-                .font(.caption)
-                .foregroundStyle(AppTheme.textSecondary)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    private func percentualText(_ l: RacaoLeitura?) -> String {
+        guard let p = l?.percentualRacao else { return "—" }
+        return String(format: "%.0f%%", p)
     }
 
-    private func horaString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
-    }
-}
-
-/// Ponto do gráfico de histórico de leituras do sensor.
-private struct RacaoPonto: Identifiable {
-    let indice: Int
-    let distancia: Double
-    var id: Int { indice }
-}
-
-/// Legenda simples do gráfico de histórico.
-private struct RuleMarkLegend: View {
-    var body: some View {
-        HStack(spacing: 16) {
-            legendItem(color: AppTheme.primaryGreen, text: "Normal (≤ 30 cm)")
-            legendItem(color: AppTheme.alertRed, text: "Crítico (> 30 cm)")
-        }
-        .font(.caption2)
-        .foregroundStyle(AppTheme.textSecondary)
+    private func percentualColor(_ l: RacaoLeitura?) -> Color {
+        guard let p = l?.percentualRacao else { return AppTheme.textSecondary }
+        if p <= 15 { return AppTheme.alertRed }
+        if p <= 40 { return AppTheme.accentYellow }
+        return AppTheme.primaryGreen
     }
 
-    private func legendItem(color: Color, text: String) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(text)
-        }
+    private func pesoText(_ l: RacaoLeitura?) -> String {
+        guard let kg = l?.pesoKg else { return "—" }
+        return String(format: "%.1f kg", kg)
     }
 }
 

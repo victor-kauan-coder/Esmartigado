@@ -1,8 +1,7 @@
 import Foundation
 
-/// Cliente REST para o flow de monitoramento de ração do Node-RED
-/// ("Sensor Completo"): leitura de nível, histórico, medição sob demanda
-/// e configuração do horário de alarme.
+/// Cliente REST para o flow de monitoramento de ração do Node-RED.
+/// Consome as 8 rotas descritas no guia de integração.
 final class RacaoAPI {
     let baseURL: String
 
@@ -14,16 +13,23 @@ final class RacaoAPI {
     private var historicoURL: URL { URL(string: "\(baseURL)/api/historico")! }
     private var medirURL: URL { URL(string: "\(baseURL)/api/medir")! }
     private var alarmeURL: URL { URL(string: "\(baseURL)/api/alarme")! }
+    private var configURL: URL { URL(string: "\(baseURL)/api/config-recipiente")! }
+
+    private func consumoURL(periodo: PeriodoConsumo) -> URL {
+        URL(string: "\(baseURL)/api/consumo?periodo=\(periodo.rawValue)")!
+    }
 
     private let decoder = JSONDecoder()
 
-    /// GET /api/ultimo — última leitura do sensor.
+    // MARK: - Leituras
+
+    /// GET /api/ultimo — última leitura do sensor (distância, %, peso, alerta).
     func ultimaLeitura() async throws -> RacaoLeitura {
         let (data, _) = try await URLSession.shared.data(from: ultimoURL)
         return try decoder.decode(RacaoLeitura.self, from: data)
     }
 
-    /// GET /api/historico — até 50 leituras (mais recente primeiro).
+    /// GET /api/historico — até 500 leituras (mais recente primeiro).
     func historico() async throws -> [RacaoLeitura] {
         let (data, _) = try await URLSession.shared.data(from: historicoURL)
         return try decoder.decode([RacaoLeitura].self, from: data)
@@ -31,19 +37,81 @@ final class RacaoAPI {
 
     /// POST /api/medir — pede uma nova medição à placa via WebSocket.
     func medir() async throws {
-        var request = URLRequest(url: medirURL)
+        try await post(medirURL, body: [:])
+    }
+
+    // MARK: - Alarmes
+
+    /// GET /api/alarme — lista os horários cadastrados (tolerante a formato).
+    func listarAlarmes() async throws -> [String] {
+        let (data, _) = try await URLSession.shared.data(from: alarmeURL)
+        return Self.parseAlarmes(data)
+    }
+
+    /// POST /api/alarme — adiciona um horário de medição automática.
+    func adicionarAlarme(hora: String) async throws {
+        try await post(alarmeURL, body: ["hora": hora, "acao": "adicionar"])
+    }
+
+    /// POST /api/alarme — remove um horário existente.
+    func removerAlarme(hora: String) async throws {
+        try await post(alarmeURL, body: ["hora": hora, "acao": "remover"])
+    }
+
+    // MARK: - Configuração do recipiente
+
+    /// GET /api/config-recipiente — calibração salva (ou `nil` se não houver).
+    func obterConfig() async throws -> ConfigRecipiente? {
+        let (data, _) = try await URLSession.shared.data(from: configURL)
+        return try? decoder.decode(ConfigRecipiente.self, from: data)
+    }
+
+    /// POST /api/config-recipiente — salva a calibração do recipiente.
+    func salvarConfig(distanciaVazioCm: Double, distanciaCheioCm: Double, capacidadeKg: Double) async throws {
+        try await post(configURL, body: [
+            "distancia_vazio_cm": distanciaVazioCm,
+            "distancia_cheio_cm": distanciaCheioCm,
+            "capacidade_kg": capacidadeKg
+        ])
+    }
+
+    // MARK: - Consumo
+
+    /// GET /api/consumo?periodo=… — total e série diária de consumo.
+    func consumo(periodo: PeriodoConsumo) async throws -> ConsumoResponse {
+        let (data, _) = try await URLSession.shared.data(from: consumoURL(periodo: periodo))
+        return try decoder.decode(ConsumoResponse.self, from: data)
+    }
+
+    // MARK: - Helpers
+
+    private func post(_ url: URL, body: [String: Any]) async throws {
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "{}".data(using: .utf8)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         _ = try await URLSession.shared.data(for: request)
     }
 
-    /// POST /api/alarme — define o horário diário de medição automática.
-    func definirAlarme(hora: String) async throws {
-        var request = URLRequest(url: alarmeURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["hora": hora])
-        _ = try await URLSession.shared.data(for: request)
+    /// Extrai os horários de alarme de respostas em vários formatos:
+    /// `["06:00"]`, `[{"hora":"06:00"}]` ou `{"alarmes":[...]}`.
+    static func parseAlarmes(_ data: Data) -> [String] {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else { return [] }
+
+        func extract(_ any: Any) -> [String] {
+            if let arr = any as? [Any] {
+                return arr.flatMap { extract($0) }
+            }
+            if let s = any as? String {
+                return [s]
+            }
+            if let dict = any as? [String: Any] {
+                if let h = dict["hora"] as? String { return [h] }
+                if let inner = dict["alarmes"] { return extract(inner) }
+                if let inner = dict["horarios"] { return extract(inner) }
+            }
+            return []
+        }
+        return extract(obj)
     }
 }

@@ -22,10 +22,12 @@ final class IoTService: ObservableObject {
     @Published var isConnected = false
     @Published var lastError: String?
 
-    // Estado do sensor de ração (flow "Sensor Completo")
+    // Estado do sensor de ração (flow "Sensor de Ração")
     @Published var ultimaRacao: RacaoLeitura?
     @Published var historicoRacao: [RacaoLeitura] = []
-    @Published var horarioAlarme: String?
+    @Published var alarmes: [String] = []
+    @Published var configRecipiente: ConfigRecipiente?
+    @Published var consumo: ConsumoResponse?
 
     private let api = AnimaisAPI()
     private let racaoAPI = RacaoAPI()
@@ -125,12 +127,57 @@ final class IoTService: ObservableObject {
         }
     }
 
-    func definirAlarmeRacao(hora: String) async {
+    // MARK: Alarmes
+
+    func fetchAlarmes() async {
+        if let lista = try? await racaoAPI.listarAlarmes() {
+            alarmes = lista
+        }
+    }
+
+    func adicionarAlarme(hora: String) async {
         do {
-            try await racaoAPI.definirAlarme(hora: hora)
-            horarioAlarme = hora
+            try await racaoAPI.adicionarAlarme(hora: hora)
+            await fetchAlarmes()
         } catch {
-            lastError = "Erro ao definir alarme: \(error.localizedDescription)"
+            lastError = "Erro ao adicionar alarme: \(error.localizedDescription)"
+        }
+    }
+
+    func removerAlarme(hora: String) async {
+        do {
+            try await racaoAPI.removerAlarme(hora: hora)
+            await fetchAlarmes()
+        } catch {
+            lastError = "Erro ao remover alarme: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Configuração do recipiente
+
+    func fetchConfig() async {
+        if let config = try? await racaoAPI.obterConfig() {
+            configRecipiente = config
+        }
+    }
+
+    func salvarConfig(distanciaVazioCm: Double, distanciaCheioCm: Double, capacidadeKg: Double) async {
+        do {
+            try await racaoAPI.salvarConfig(distanciaVazioCm: distanciaVazioCm,
+                                            distanciaCheioCm: distanciaCheioCm,
+                                            capacidadeKg: capacidadeKg)
+            await fetchConfig()
+            await fetchRacao()
+        } catch {
+            lastError = "Erro ao salvar configuração: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Consumo
+
+    func fetchConsumo(periodo: PeriodoConsumo) async {
+        if let resp = try? await racaoAPI.consumo(periodo: periodo) {
+            consumo = resp
         }
     }
 

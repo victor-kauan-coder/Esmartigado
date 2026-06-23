@@ -22,6 +22,8 @@
 		A1B2C3D4E5F60708090A0042 /* AnimaisAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708090A0027 /* AnimaisAPI.swift */; };
 		A1B2C3D4E5F60708090A0043 /* RacaoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708090A0028 /* RacaoModels.swift */; };
 		A1B2C3D4E5F60708090A0044 /* RacaoAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708090A0029 /* RacaoAPI.swift */; };
+		A1B2C3D4E5F60708090A0045 /* RacaoConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708090A002A /* RacaoConfigView.swift */; };
+		A1B2C3D4E5F60708090A0046 /* AlarmesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708090A002B /* AlarmesView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +44,8 @@
 		A1B2C3D4E5F60708090A0027 /* AnimaisAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimaisAPI.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60708090A0028 /* RacaoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RacaoModels.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60708090A0029 /* RacaoAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RacaoAPI.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60708090A002A /* RacaoConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RacaoConfigView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60708090A002B /* AlarmesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +125,8 @@
 				A1B2C3D4E5F60708090A0017 /* TrackingView.swift */,
 				A1B2C3D4E5F60708090A0018 /* FeedingView.swift */,
 				A1B2C3D4E5F60708090A0019 /* FinancialView.swift */,
+				A1B2C3D4E5F60708090A002A /* RacaoConfigView.swift */,
+				A1B2C3D4E5F60708090A002B /* AlarmesView.swift */,
 				A1B2C3D4E5F60708090A0025 /* Components */,
 			);
 			path = Views;
@@ -217,6 +223,8 @@
 				A1B2C3D4E5F60708090A0042 /* AnimaisAPI.swift in Sources */,
 				A1B2C3D4E5F60708090A0043 /* RacaoModels.swift in Sources */,
 				A1B2C3D4E5F60708090A0044 /* RacaoAPI.swift in Sources */,
+				A1B2C3D4E5F60708090A0045 /* RacaoConfigView.swift in Sources */,
+				A1B2C3D4E5F60708090A0046 /* AlarmesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
