@@ -45,6 +45,20 @@ struct DashboardData {
     var alerts: [AlertItem]
     var activities: [ActivityItem]
 
+    /// Estado inicial: cabeçalho com clima/local fictícios (não há API para
+    /// isso), mas sem números de rebanho falsos. As seções de visão geral,
+    /// indicadores e alertas ficam vazias até o primeiro fetch da API.
+    static let empty = DashboardData(
+        userName: "Produtor",
+        location: "Uberaba, MG",
+        temperature: 28,
+        weatherDescription: "Ensolarado",
+        overview: [],
+        indicators: [],
+        alerts: [],
+        activities: []
+    )
+
     static let preview = DashboardData(
         userName: "João",
         location: "Uberaba, MG",

@@ -85,25 +85,74 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 20) {
             connectionBadge
 
-            sectionTitle("Visão geral")
-            overviewGrid
+            if iotService.corralStatus == nil && iotService.lastError != nil {
+                offlineState
+            } else if iotService.corralStatus == nil {
+                loadingState
+            } else if iotService.animais.isEmpty {
+                emptyState
+            } else {
+                sectionTitle("Visão geral")
+                overviewGrid
 
-            sectionTitle("Indicadores do dia")
-            indicatorsRow
+                sectionTitle("Indicadores do dia")
+                indicatorsRow
 
-            HStack {
-                sectionTitle("Alertas importantes")
-                Spacer()
-                Button("Ver todos") { }
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.primaryGreen)
+                if !iotService.dashboard.alerts.isEmpty {
+                    sectionTitle("Alertas importantes")
+                    alertsList
+                }
+
+                if !iotService.dashboard.activities.isEmpty {
+                    sectionTitle("Atividades recentes")
+                    activitiesList
+                }
             }
-            alertsList
-
-            sectionTitle("Atividades recentes")
-            activitiesList
         }
         .padding()
+    }
+
+    private var loadingState: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text("Carregando dados do rebanho...")
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 40)
+    }
+
+    private var offlineState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+                .font(.largeTitle)
+                .foregroundStyle(AppTheme.textSecondary)
+            Text("Sem conexão com o servidor")
+                .font(.headline)
+            Text("Não foi possível carregar os dados do rebanho. Verifique se o Node-RED está acessível na rede.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 40)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "pawprint")
+                .font(.largeTitle)
+                .foregroundStyle(AppTheme.textSecondary)
+            Text("Nenhum animal cadastrado")
+                .font(.headline)
+            Text("Cadastre animais para ver os indicadores do rebanho aqui.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 40)
     }
 
     private var connectionBadge: some View {
@@ -111,7 +160,7 @@ struct HomeView: View {
             Circle()
                 .fill(iotService.isConnected ? Color.green : Color.orange)
                 .frame(width: 8, height: 8)
-            Text(iotService.isConnected ? "Conectado ao Node-RED" : "Modo offline — dados locais")
+            Text(iotService.isConnected ? "Conectado ao Node-RED" : "Sem conexão com o Node-RED")
                 .font(.caption)
                 .foregroundStyle(AppTheme.textSecondary)
         }

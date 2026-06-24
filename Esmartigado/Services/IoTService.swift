@@ -11,7 +11,7 @@ enum IoTConfig {
 final class IoTService: ObservableObject {
     @Published var animais: [Animal] = []
     @Published var corralStatus: CorralStatus?
-    @Published var dashboard: DashboardData = .preview
+    @Published var dashboard: DashboardData = .empty
     @Published var isConnected = false
     @Published var lastError: String?
 
