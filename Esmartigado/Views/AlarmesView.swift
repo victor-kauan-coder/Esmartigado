@@ -5,6 +5,7 @@ struct AlarmesView: View {
     @EnvironmentObject var iotService: IoTService
     @State private var novoHorario = Date()
     @State private var processando = false
+    @State private var mostrarErro = false
 
     var body: some View {
         List {
@@ -14,14 +15,13 @@ struct AlarmesView: View {
                         .labelsHidden()
                     Spacer()
                     Button {
-                        Task {
-                            processando = true
-                            await iotService.adicionarAlarme(hora: horaString(novoHorario))
-                            processando = false
-                        }
+                        adicionar()
                     } label: {
                         Label("Adicionar", systemImage: "plus.circle.fill")
                     }
+                    // Em uma linha de List com DatePicker, é necessário um
+                    // buttonStyle explícito para o toque chegar ao botão.
+                    .buttonStyle(.borderless)
                     .disabled(processando)
                 }
             }
@@ -56,6 +56,20 @@ struct AlarmesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { EditButton() }
         .task { await iotService.fetchAlarmes() }
+        .alert("Não foi possível adicionar", isPresented: $mostrarErro) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(iotService.lastError ?? "Verifique a conexão com o Node-RED e tente novamente.")
+        }
+    }
+
+    private func adicionar() {
+        Task {
+            processando = true
+            let ok = await iotService.adicionarAlarme(hora: horaString(novoHorario))
+            processando = false
+            if !ok { mostrarErro = true }
+        }
     }
 
     private func horaString(_ date: Date) -> String {

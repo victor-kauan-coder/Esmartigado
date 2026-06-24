@@ -154,21 +154,27 @@ final class IoTService: ObservableObject {
         }
     }
 
-    func adicionarAlarme(hora: String) async {
+    @discardableResult
+    func adicionarAlarme(hora: String) async -> Bool {
         do {
             try await racaoAPI.adicionarAlarme(hora: hora)
             await fetchAlarmes()
+            return true
         } catch {
             lastError = "Erro ao adicionar alarme: \(error.localizedDescription)"
+            return false
         }
     }
 
-    func removerAlarme(hora: String) async {
+    @discardableResult
+    func removerAlarme(hora: String) async -> Bool {
         do {
             try await racaoAPI.removerAlarme(hora: hora)
             await fetchAlarmes()
+            return true
         } catch {
             lastError = "Erro ao remover alarme: \(error.localizedDescription)"
+            return false
         }
     }
 
