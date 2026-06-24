@@ -69,7 +69,7 @@ struct ConfigRecipiente: Codable {
     }
 }
 
-/// Período aceito por `GET /api/consumo`.
+/// Período aceito por `GET /consumo`.
 enum PeriodoConsumo: String, CaseIterable, Identifiable {
     case dia, semana, mes
     var id: String { rawValue }
@@ -120,7 +120,7 @@ struct ConsumoDia: Identifiable, Decodable {
     }
 }
 
-/// Resposta de `GET /api/consumo`: total no período + série diária.
+/// Resposta de `GET /consumo`: total no período + série diária.
 struct ConsumoResponse: Decodable {
     let total: Double
     let consumoPorDia: [ConsumoDia]

@@ -96,7 +96,7 @@ final class IoTService: ObservableObject {
         corralStatus?.zones ?? []
     }
 
-    // MARK: - Sensor de ração (/api/*)
+    // MARK: - Sensor de ração
 
     func fetchRacao() async {
         // Tenta a resposta enriquecida (leitura + presença); cai para o
