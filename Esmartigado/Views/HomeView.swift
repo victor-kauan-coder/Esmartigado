@@ -6,25 +6,29 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    headerSection
-                    contentSection
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        headerSection(topInset: proxy.safeAreaInsets.top)
+                        contentSection
+                    }
                 }
+                .background(AppTheme.background)
+                .ignoresSafeArea(edges: .top)
             }
-            .background(AppTheme.background)
             .navigationBarHidden(true)
         }
     }
 
-    private var headerSection: some View {
+    private func headerSection(topInset: CGFloat) -> some View {
         ZStack(alignment: .bottom) {
             LinearGradient(
                 colors: [AppTheme.darkGreen, AppTheme.primaryGreen.opacity(0.8)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .frame(height: 220)
+            // Estende o gradiente sob a status bar/notch, preenchendo o topo.
+            .frame(height: 220 + topInset)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
