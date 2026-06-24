@@ -100,6 +100,7 @@ struct FeedingView: View {
 
     private var levelCard: some View {
         let leitura = iotService.ultimaRacao
+        let bloqueado = leitura?.isBloqueado ?? false
         let semLeitura = leitura?.semLeitura ?? true
         let foraAlcance = leitura?.foraDeAlcance ?? false
         let nivel = leitura?.nivel ?? .normal
@@ -109,10 +110,18 @@ struct FeedingView: View {
                 Text("Sensor")
                     .font(.headline)
                 Spacer()
-                statusBadge(nivel: nivel, semLeitura: semLeitura, foraAlcance: foraAlcance)
+                statusBadge(nivel: nivel, semLeitura: semLeitura, foraAlcance: foraAlcance, bloqueado: bloqueado)
             }
 
-            if foraAlcance {
+            if bloqueado {
+                Label("Medição bloqueada", systemImage: "nosign")
+                    .font(.title3.bold())
+                    .foregroundStyle(AppTheme.accentYellow)
+                Text(leitura?.motivoBloqueioTexto
+                     ?? "Gado detectado próximo ao recipiente. Medição de ração indisponível.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            } else if foraAlcance {
                 Text("Sensor fora de alcance")
                     .font(.title3.bold())
                     .foregroundStyle(AppTheme.alertRed)
@@ -155,10 +164,13 @@ struct FeedingView: View {
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 
-    private func statusBadge(nivel: RacaoLeitura.Nivel, semLeitura: Bool, foraAlcance: Bool) -> some View {
+    private func statusBadge(nivel: RacaoLeitura.Nivel, semLeitura: Bool, foraAlcance: Bool, bloqueado: Bool) -> some View {
         let color: Color
         let text: String
-        if semLeitura || foraAlcance {
+        if bloqueado {
+            color = AppTheme.accentYellow
+            text = "BLOQUEADO"
+        } else if semLeitura || foraAlcance {
             color = AppTheme.textSecondary
             text = "—"
         } else {

@@ -13,16 +13,32 @@ struct RacaoLeitura: Codable, Identifiable {
     let timestamp: String?
     let hora: String?
     let alerta: String?
+    let bloqueado: Bool?
+    let motivoBloqueio: String?
 
     enum CodingKeys: String, CodingKey {
         case distanciaCm = "distancia_cm"
         case percentualRacao = "percentual_racao"
         case pesoKg = "peso_kg"
-        case timestamp, hora, alerta
+        case motivoBloqueio = "motivo_bloqueio"
+        case timestamp, hora, alerta, bloqueado
     }
 
     /// Nível de alerta da leitura (o Node-RED envia NORMAL / BAIXO / CRITICO).
     enum Nivel { case normal, baixo, critico }
+
+    /// Medição indisponível porque o sensor de presença detectou gado no local.
+    /// O Node-RED zera distância/percentual/peso e envia `alerta: "BLOQUEADO"`.
+    var isBloqueado: Bool {
+        if bloqueado == true { return true }
+        return alerta?.uppercased().contains("BLOQUEADO") == true
+    }
+
+    /// Texto explicando o motivo do bloqueio (com fallback).
+    var motivoBloqueioTexto: String {
+        if let m = motivoBloqueio, !m.isEmpty { return m }
+        return "Gado detectado próximo ao recipiente. Medição de ração indisponível."
+    }
 
     var nivel: Nivel {
         if let a = alerta?.uppercased() {
