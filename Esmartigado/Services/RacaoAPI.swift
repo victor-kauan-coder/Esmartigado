@@ -14,6 +14,7 @@ final class RacaoAPI {
     private var medirURL: URL { URL(string: "\(baseURL)/api/medir")! }
     private var alarmeURL: URL { URL(string: "\(baseURL)/api/alarme")! }
     private var configURL: URL { URL(string: "\(baseURL)/api/config-recipiente")! }
+    private var presencaURL: URL { URL(string: "\(baseURL)/presenca")! }
 
     private func consumoURL(periodo: PeriodoConsumo) -> URL {
         URL(string: "\(baseURL)/api/consumo?periodo=\(periodo.rawValue)")!
@@ -33,6 +34,18 @@ final class RacaoAPI {
     func historico() async throws -> [RacaoLeitura] {
         let (data, _) = try await URLSession.shared.data(from: historicoURL)
         return try decoder.decode([RacaoLeitura].self, from: data)
+    }
+
+    /// GET /presenca — estado atual do sensor de presença de gado.
+    func presencaGado() async throws -> PresencaGado {
+        let (data, _) = try await URLSession.shared.data(from: presencaURL)
+        return try decoder.decode(PresencaGado.self, from: data)
+    }
+
+    /// GET /api/ultimo — versão enriquecida (leitura + estado de presença).
+    func ultimaLeituraComPresenca() async throws -> UltimaLeituraResponse {
+        let (data, _) = try await URLSession.shared.data(from: ultimoURL)
+        return try decoder.decode(UltimaLeituraResponse.self, from: data)
     }
 
     /// POST /api/medir — pede uma nova medição à placa via WebSocket.
@@ -107,6 +120,7 @@ final class RacaoAPI {
             }
             if let dict = any as? [String: Any] {
                 if let h = dict["hora"] as? String { return [h] }
+                if let inner = dict["horarios_alarme"] { return extract(inner) }
                 if let inner = dict["alarmes"] { return extract(inner) }
                 if let inner = dict["horarios"] { return extract(inner) }
             }

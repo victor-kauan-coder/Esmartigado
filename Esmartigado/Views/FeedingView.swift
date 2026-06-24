@@ -5,15 +5,18 @@ struct FeedingView: View {
     @EnvironmentObject var iotService: IoTService
     @State private var isMeasuring = false
     @State private var periodo: PeriodoConsumo = .semana
+    @State private var showBlockAlert = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    presenceBanner
                     statusCards
                     levelCard
                     measureButton
                     consumoSection
+                    previsaoSection
                     managementLinks
                     historySection
                 }
@@ -23,6 +26,28 @@ struct FeedingView: View {
             .navigationTitle("Alimentação")
             .task { await loadAll() }
             .refreshable { await loadAll() }
+            .alert("Medição bloqueada", isPresented: $showBlockAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(iotService.presencaGado?.mensagemUI
+                     ?? "Gado detectado próximo ao recipiente. Tente novamente em instantes.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var presenceBanner: some View {
+        if let presenca = iotService.presencaGado, presenca.presenca {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(AppTheme.accentYellow)
+                Text(presenca.mensagemUI)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(AppTheme.accentYellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
@@ -30,6 +55,7 @@ struct FeedingView: View {
         await iotService.fetchRacao()
         await iotService.fetchConfig()
         await iotService.fetchConsumo(periodo: periodo)
+        await iotService.fetchPrevisao()
     }
 
     // MARK: - Cards de percentual e peso
@@ -74,16 +100,16 @@ struct FeedingView: View {
 
     private var levelCard: some View {
         let leitura = iotService.ultimaRacao
-        let critico = leitura?.isCritico ?? false
         let semLeitura = leitura?.semLeitura ?? true
         let foraAlcance = leitura?.foraDeAlcance ?? false
+        let nivel = leitura?.nivel ?? .normal
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Sensor")
                     .font(.headline)
                 Spacer()
-                statusBadge(critico: critico, semLeitura: semLeitura, foraAlcance: foraAlcance)
+                statusBadge(nivel: nivel, semLeitura: semLeitura, foraAlcance: foraAlcance)
             }
 
             if foraAlcance {
@@ -97,7 +123,7 @@ struct FeedingView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(String(format: "%.0f", dist))
                         .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(critico ? AppTheme.alertRed : AppTheme.primaryGreen)
+                        .foregroundStyle(nivelColor(nivel))
                     Text("cm de distância")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.textSecondary)
@@ -129,18 +155,19 @@ struct FeedingView: View {
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 
-    private func statusBadge(critico: Bool, semLeitura: Bool, foraAlcance: Bool) -> some View {
+    private func statusBadge(nivel: RacaoLeitura.Nivel, semLeitura: Bool, foraAlcance: Bool) -> some View {
         let color: Color
         let text: String
         if semLeitura || foraAlcance {
             color = AppTheme.textSecondary
             text = "—"
-        } else if critico {
-            color = AppTheme.alertRed
-            text = "CRÍTICO"
         } else {
-            color = AppTheme.primaryGreen
-            text = "NORMAL"
+            color = nivelColor(nivel)
+            switch nivel {
+            case .critico: text = "CRÍTICO"
+            case .baixo: text = "BAIXO"
+            case .normal: text = "NORMAL"
+            }
         }
         return Text(text)
             .font(.caption.bold())
@@ -151,30 +178,40 @@ struct FeedingView: View {
             .clipShape(Capsule())
     }
 
+    private func nivelColor(_ nivel: RacaoLeitura.Nivel) -> Color {
+        switch nivel {
+        case .critico: return AppTheme.alertRed
+        case .baixo: return AppTheme.accentYellow
+        case .normal: return AppTheme.primaryGreen
+        }
+    }
+
     private var measureButton: some View {
-        Button {
+        let bloqueado = iotService.presencaGado?.presenca == true
+        return Button {
             Task {
                 isMeasuring = true
-                await iotService.medirRacao()
+                let ok = await iotService.medirRacaoSeguro()
                 isMeasuring = false
+                if !ok { showBlockAlert = true }
             }
         } label: {
             HStack {
                 if isMeasuring {
                     ProgressView().tint(.white)
                 } else {
-                    Image(systemName: "ruler")
+                    Image(systemName: bloqueado ? "nosign" : "ruler")
                 }
-                Text(isMeasuring ? "Medindo..." : "Medir agora")
+                Text(isMeasuring ? "Medindo..." : (bloqueado ? "Indisponível (gado presente)" : "Medir agora"))
                     .font(.subheadline.bold())
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(AppTheme.primaryGreen)
+            .background(bloqueado ? AppTheme.textSecondary : AppTheme.primaryGreen)
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
-        .disabled(isMeasuring)
+        .disabled(isMeasuring || bloqueado)
     }
 
     // MARK: - Consumo
@@ -202,23 +239,7 @@ struct FeedingView: View {
                 Task { await iotService.fetchConsumo(periodo: novo) }
             }
 
-            let dias = iotService.consumo?.consumoPorDia ?? []
-            if dias.isEmpty {
-                Text("Sem dados de consumo no período")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 24)
-            } else {
-                Chart(dias) { dia in
-                    BarMark(
-                        x: .value("Dia", dia.data),
-                        y: .value("Consumo (kg)", dia.consumo)
-                    )
-                    .foregroundStyle(AppTheme.primaryGreen)
-                }
-                .frame(height: 180)
-            }
+            consumoChart
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -226,6 +247,161 @@ struct FeedingView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
+
+    @ViewBuilder
+    private var consumoChart: some View {
+        let dias = iotService.consumo?.consumoPorDia ?? []
+        let pontos = dias.filter { $0.dataDate != nil }
+
+        if dias.isEmpty {
+            Text("Sem dados de consumo no período")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 24)
+        } else if pontos.isEmpty {
+            // Fallback categórico se as datas não forem reconhecidas.
+            Chart(dias) { dia in
+                BarMark(
+                    x: .value("Dia", dia.label),
+                    y: .value("Consumo (kg)", dia.consumo)
+                )
+                .foregroundStyle(AppTheme.primaryGreen)
+                .cornerRadius(4)
+            }
+            .frame(height: 200)
+        } else {
+            Chart(pontos) { dia in
+                BarMark(
+                    x: .value("Dia", dia.dataDate ?? Date(), unit: .day),
+                    y: .value("Consumo (kg)", dia.consumo)
+                )
+                .foregroundStyle(AppTheme.primaryGreen)
+                .cornerRadius(4)
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: strideDias)) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: .dateTime.day().month(.twoDigits))
+                }
+            }
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let kg = value.as(Double.self) {
+                            Text("\(kg, specifier: "%.0f") kg")
+                        }
+                    }
+                }
+            }
+            .frame(height: 200)
+        }
+    }
+
+    /// Espaçamento dos rótulos do eixo X conforme o período.
+    private var strideDias: Int {
+        switch periodo {
+        case .dia: return 1
+        case .semana: return 1
+        case .mes: return 5
+        }
+    }
+
+    // MARK: - Previsão de consumo
+
+    @ViewBuilder
+    private var previsaoSection: some View {
+        if let p = iotService.previsao, p.temDados {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Previsão de consumo")
+                        .font(.headline)
+                    Spacer()
+                    tendenciaBadge(p)
+                }
+
+                Text("Média de \(fmt(p.mediaDiariaKg)) kg/dia · base de \(p.diasConsiderados) dia(s) · regressão + sazonalidade")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+
+                HStack(spacing: 12) {
+                    previsaoCard(
+                        titulo: "Semana atual",
+                        valor: p.previsaoSemanaAtualKg,
+                        detalhe: "já consumido \(fmt(p.consumidoSemanaAtualKg)) kg"
+                    )
+                    previsaoCard(
+                        titulo: "Próxima semana",
+                        valor: p.previsaoProximaSemanaKg,
+                        detalhe: "estimativa"
+                    )
+                }
+
+                if p.previsaoProximosDias.contains(where: { $0.consumo > 0 }) {
+                    Text("Projeção dos próximos 7 dias")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppTheme.textSecondary)
+                    Chart(p.previsaoProximosDias) { dia in
+                        BarMark(
+                            x: .value("Dia", dia.dataDate ?? Date(), unit: .day),
+                            y: .value("Previsto (kg)", dia.consumo)
+                        )
+                        .foregroundStyle(AppTheme.accentBlue.opacity(0.7))
+                        .cornerRadius(4)
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: .day, count: 1)) { _ in
+                            AxisGridLine()
+                            AxisValueLabel(format: .dateTime.day().month(.twoDigits))
+                        }
+                    }
+                    .frame(height: 140)
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        }
+    }
+
+    private func tendenciaBadge(_ p: PrevisaoConsumo) -> some View {
+        let (texto, icone, cor): (String, String, Color)
+        switch p.tendencia {
+        case .crescente: (texto, icone, cor) = ("Subindo", "arrow.up.right", AppTheme.alertRed)
+        case .decrescente: (texto, icone, cor) = ("Caindo", "arrow.down.right", AppTheme.primaryGreen)
+        case .estavel: (texto, icone, cor) = ("Estável", "arrow.right", AppTheme.textSecondary)
+        }
+        return Label("\(texto) (\(fmt(abs(p.tendenciaKgPorDia))) kg/dia)", systemImage: icone)
+            .font(.caption.bold())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(cor.opacity(0.15))
+            .foregroundStyle(cor)
+            .clipShape(Capsule())
+    }
+
+    private func previsaoCard(titulo: String, valor: Double, detalhe: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(titulo)
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+            Text("\(fmt(valor)) kg")
+                .font(.title3.bold())
+                .foregroundStyle(AppTheme.primaryGreen)
+            Text(detalhe)
+                .font(.caption2)
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(AppTheme.primaryGreen.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func fmt(_ v: Double) -> String { String(format: "%.1f", v) }
 
     // MARK: - Links de gestão
 
@@ -285,7 +461,7 @@ struct FeedingView: View {
                 ForEach(leituras.prefix(15)) { leitura in
                     HStack {
                         Circle()
-                            .fill(leitura.isCritico ? AppTheme.alertRed : AppTheme.primaryGreen)
+                            .fill(nivelColor(leitura.nivel))
                             .frame(width: 8, height: 8)
                         Text(leitura.hora ?? "—")
                             .font(.caption)
@@ -319,7 +495,7 @@ struct FeedingView: View {
     private func percentualColor(_ l: RacaoLeitura?) -> Color {
         guard let p = l?.percentualRacao else { return AppTheme.textSecondary }
         if p <= 15 { return AppTheme.alertRed }
-        if p <= 40 { return AppTheme.accentYellow }
+        if p <= 30 { return AppTheme.accentYellow }
         return AppTheme.primaryGreen
     }
 

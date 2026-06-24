@@ -3,15 +3,8 @@ import Combine
 
 /// Configuração de conexão com o Node-RED
 enum IoTConfig {
-    /// URL base do Node-RED (ajuste para IP da sua rede local)
-    static let baseURL = "http://127.0.0.1:1880"
-
-    /// Endpoint REST de animais (CRUD) — fonte de dados real do app.
-    static let animaisURLString = "\(baseURL)/animais"
-
-    static var animaisURL: URL {
-        URL(string: animaisURLString)!
-    }
+    /// URL base do Node-RED (ajuste para o IP da máquina onde ele roda)
+    static let baseURL = "http://192.168.128.65:1880"
 }
 
 @MainActor
@@ -28,6 +21,8 @@ final class IoTService: ObservableObject {
     @Published var alarmes: [String] = []
     @Published var configRecipiente: ConfigRecipiente?
     @Published var consumo: ConsumoResponse?
+    @Published var previsao: PrevisaoConsumo?
+    @Published var presencaGado: PresencaGado?
 
     private let api = AnimaisAPI()
     private let racaoAPI = RacaoAPI()
@@ -104,13 +99,24 @@ final class IoTService: ObservableObject {
     // MARK: - Sensor de ração (/api/*)
 
     func fetchRacao() async {
-        async let ultima = try? racaoAPI.ultimaLeitura()
-        async let hist = try? racaoAPI.historico()
-        if let leitura = await ultima {
+        // Tenta a resposta enriquecida (leitura + presença); cai para o
+        // formato antigo se o backend ainda não expõe presença.
+        if let resposta = try? await racaoAPI.ultimaLeituraComPresenca() {
+            ultimaRacao = resposta.leitura
+            presencaGado = resposta.presenca_gado
+        } else if let leitura = try? await racaoAPI.ultimaLeitura() {
             ultimaRacao = leitura
         }
-        if let lista = await hist {
+
+        if let lista = try? await racaoAPI.historico() {
             historicoRacao = lista
+        }
+    }
+
+    /// Busca apenas o estado de presença (polling rápido opcional).
+    func fetchPresenca() async {
+        if let estado = try? await racaoAPI.presencaGado() {
+            presencaGado = estado
         }
     }
 
@@ -125,6 +131,19 @@ final class IoTService: ObservableObject {
         } catch {
             lastError = "Erro ao medir: \(error.localizedDescription)"
         }
+    }
+
+    /// Solicita medição com guarda de presença: se houver gado próximo,
+    /// bloqueia o comando e retorna `false`.
+    @discardableResult
+    func medirRacaoSeguro() async -> Bool {
+        await fetchPresenca()
+        if presencaGado?.presenca == true {
+            lastError = presencaGado?.mensagemUI
+            return false
+        }
+        await medirRacao()
+        return true
     }
 
     // MARK: Alarmes
@@ -181,6 +200,14 @@ final class IoTService: ObservableObject {
         }
     }
 
+    /// Recalcula a previsão de consumo usando os últimos 30 dias como base,
+    /// independentemente do período exibido no gráfico.
+    func fetchPrevisao() async {
+        if let resp = try? await racaoAPI.consumo(periodo: .mes) {
+            previsao = PrevisaoConsumo.calcular(de: resp.consumoPorDia)
+        }
+    }
+
     // MARK: - Polling
 
     private func startPolling() {
@@ -188,11 +215,13 @@ final class IoTService: ObservableObject {
             Task { @MainActor in
                 await self?.fetchAnimais()
                 await self?.fetchRacao()
+                await self?.fetchPresenca()
             }
         }
         Task {
             await fetchAnimais()
             await fetchRacao()
+            await fetchPresenca()
         }
     }
 
