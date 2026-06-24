@@ -66,13 +66,28 @@ struct ActivityPayload: Codable, Identifiable {
     let time: String
 }
 
-struct ZoneStatus: Codable, Identifiable {
+import Foundation
+import CoreLocation // Necessário para usar o CLLocationCoordinate2D
+
+struct ZoneStatus: Identifiable, Codable {
     let id: String
     let name: String
     let sensorId: String
     let present: Bool
     let distanceCm: Double?
     let animalCount: Int
+    
+    // 1. Variáveis que a API envia (o Codable entende Double perfeitamente)
+    var latitude: Double?
+    var longitude: Double?
+    
+    // 2. Propriedade computada exigida pelo MapKit para desenhar os pinos
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(
+            latitude: latitude ?? 0.0,
+            longitude: longitude ?? 0.0
+        )
+    }
 }
 
 /// Payload MQTT publicado pelos sensores ESP32/Arduino

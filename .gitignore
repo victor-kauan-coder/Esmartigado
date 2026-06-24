@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode - User-specific state (gerado pelo Xcode, causa conflitos de merge)
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+
+# Xcode - Build
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# CocoaPods / Carthage (caso usados no futuro)
+Pods/
+Carthage/Build/
