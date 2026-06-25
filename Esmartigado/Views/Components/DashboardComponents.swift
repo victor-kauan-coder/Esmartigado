@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OverviewCard: View {
     let metric: OverviewMetric
+    private let cardHeight: CGFloat = 136
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -11,16 +12,22 @@ struct OverviewCard: View {
 
             Text(metric.value)
                 .font(.title.bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
             Text(metric.label)
                 .font(.caption)
                 .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(1)
 
             Text(metric.subtitle)
                 .font(.caption2)
                 .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(2)
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
         .padding()
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
