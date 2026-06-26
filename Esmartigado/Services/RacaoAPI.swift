@@ -80,12 +80,8 @@ final class RacaoAPI {
     }
 
     /// POST /config-recipiente — salva a calibração do recipiente.
-    func salvarConfig(distanciaVazioCm: Double, distanciaCheioCm: Double, capacidadeKg: Double) async throws {
-        try await post(configURL, body: [
-            "distancia_vazio_cm": distanciaVazioCm,
-            "distancia_cheio_cm": distanciaCheioCm,
-            "capacidade_kg": capacidadeKg
-        ])
+    func salvarConfig(_ config: ConfigRecipiente, capacidadeKg: Double) async throws {
+        try await post(configURL, body: config.payloadAPI(capacidadeFinalKg: capacidadeKg))
     }
 
     // MARK: - Consumo

@@ -181,22 +181,56 @@ final class IoTService: ObservableObject {
 
     // MARK: Configuração do recipiente
 
+    private static let configExtrasKey = "esmartigado.config_recipiente_extras"
+
     func fetchConfig() async {
-        if let config = try? await racaoAPI.obterConfig() {
-            configRecipiente = config
+        var config = try? await racaoAPI.obterConfig()
+        if let extras = Self.carregarExtras() {
+            config = mesclarExtras(extras, em: config)
         }
+        if let config { configRecipiente = config }
     }
 
-    func salvarConfig(distanciaVazioCm: Double, distanciaCheioCm: Double, capacidadeKg: Double) async {
+    func salvarConfig(_ config: ConfigRecipiente) async {
+        let capacidade = config.usaModoAvancado
+            ? (config.capacidadeCalculadaKg() ?? config.capacidadeKg ?? 0)
+            : (config.capacidadeKg ?? 0)
         do {
-            try await racaoAPI.salvarConfig(distanciaVazioCm: distanciaVazioCm,
-                                            distanciaCheioCm: distanciaCheioCm,
-                                            capacidadeKg: capacidadeKg)
+            try await racaoAPI.salvarConfig(config, capacidadeKg: capacidade)
+            Self.salvarExtras(config)
             await fetchConfig()
             await fetchRacao()
         } catch {
             lastError = "Erro ao salvar configuração: \(error.localizedDescription)"
         }
+    }
+
+    private static func salvarExtras(_ config: ConfigRecipiente) {
+        if config.usaModoAvancado, let data = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(data, forKey: configExtrasKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: configExtrasKey)
+        }
+    }
+
+    private static func carregarExtras() -> ConfigRecipiente? {
+        guard let data = UserDefaults.standard.data(forKey: configExtrasKey) else { return nil }
+        return try? JSONDecoder().decode(ConfigRecipiente.self, from: data)
+    }
+
+    private func mesclarExtras(_ extras: ConfigRecipiente, em base: ConfigRecipiente?) -> ConfigRecipiente {
+        var c = base ?? ConfigRecipiente()
+        c.modoAvancado = extras.modoAvancado
+        c.formato = extras.formato
+        c.comprimentoCm = extras.comprimentoCm
+        c.larguraCm = extras.larguraCm
+        c.alturaCm = extras.alturaCm
+        c.diametroCm = extras.diametroCm
+        c.diametroSuperiorCm = extras.diametroSuperiorCm
+        c.diametroInferiorCm = extras.diametroInferiorCm
+        c.densidadeKgL = extras.densidadeKgL
+        if c.capacidadeKg == nil { c.capacidadeKg = extras.capacidadeKg }
+        return c
     }
 
     // MARK: Consumo

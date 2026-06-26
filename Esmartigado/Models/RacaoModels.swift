@@ -68,20 +68,135 @@ struct RacaoLeitura: Codable, Identifiable {
     var semConfiguracao: Bool { percentualRacao == nil }
 }
 
+/// Formato geométrico do recipiente (modo avançado).
+enum FormatoRecipiente: String, CaseIterable, Identifiable, Codable {
+    case retangular, cilindrico, funil
+
+    var id: String { rawValue }
+
+    var titulo: String {
+        switch self {
+        case .retangular: return "Retangular"
+        case .cilindrico: return "Cilíndrico"
+        case .funil: return "Funil"
+        }
+    }
+}
+
 /// Calibração do recipiente de ração.
 struct ConfigRecipiente: Codable {
     var distanciaVazioCm: Double?
     var distanciaCheioCm: Double?
     var capacidadeKg: Double?
 
+    // Modo avançado (opcional — o usuário escolhe preencher ou não)
+    var modoAvancado: Bool?
+    var formato: FormatoRecipiente?
+    var comprimentoCm: Double?
+    var larguraCm: Double?
+    var alturaCm: Double?
+    var diametroCm: Double?
+    var diametroSuperiorCm: Double?
+    var diametroInferiorCm: Double?
+    /// Densidade aparente da ração em kg/L.
+    var densidadeKgL: Double?
+
     enum CodingKeys: String, CodingKey {
         case distanciaVazioCm = "distancia_vazio_cm"
         case distanciaCheioCm = "distancia_cheio_cm"
         case capacidadeKg = "capacidade_kg"
+        case modoAvancado = "modo_avancado"
+        case formato
+        case comprimentoCm = "comprimento_cm"
+        case larguraCm = "largura_cm"
+        case alturaCm = "altura_cm"
+        case diametroCm = "diametro_cm"
+        case diametroSuperiorCm = "diametro_superior_cm"
+        case diametroInferiorCm = "diametro_inferior_cm"
+        case densidadeKgL = "densidade_kg_l"
     }
 
     var configurado: Bool {
-        distanciaVazioCm != nil && distanciaCheioCm != nil && capacidadeKg != nil
+        guard let v = distanciaVazioCm, let c = distanciaCheioCm, let cap = capacidadeKg else { return false }
+        return v > c && cap > 0
+    }
+
+    var usaModoAvancado: Bool { modoAvancado == true }
+
+    /// Volume interno total em litros (cm³ → L), a partir das dimensões do modo avançado.
+    func volumeLitros() -> Double? {
+        guard usaModoAvancado, let formato, let h = alturaCm, h > 0 else { return nil }
+
+        let volumeCm3: Double?
+        switch formato {
+        case .retangular:
+            guard let l = comprimentoCm, let w = larguraCm, l > 0, w > 0 else { return nil }
+            volumeCm3 = l * w * h
+        case .cilindrico:
+            guard let d = diametroCm, d > 0 else { return nil }
+            let r = d / 2
+            volumeCm3 = .pi * r * r * h
+        case .funil:
+            guard let dSup = diametroSuperiorCm, let dInf = diametroInferiorCm,
+                  dSup > 0, dInf > 0 else { return nil }
+            let R = dSup / 2
+            let r = dInf / 2
+            // Tronco de cone: V = (π·h/3)·(R² + R·r + r²)
+            volumeCm3 = (.pi * h / 3) * (R * R + R * r + r * r)
+        }
+
+        guard let volumeCm3 else { return nil }
+        return (volumeCm3 / 1000 * 100).rounded() / 100
+    }
+
+    /// Capacidade em kg = volume (L) × densidade (kg/L).
+    func capacidadeCalculadaKg() -> Double? {
+        guard let litros = volumeLitros(),
+              let densidade = densidadeKgL, densidade > 0 else { return nil }
+        return (litros * densidade * 100).rounded() / 100
+    }
+
+    /// Volume atual em litros, a partir do percentual de preenchimento (modo avançado).
+    func volumeAtualLitros(percentual: Double?) -> Double? {
+        guard let maxLitros = volumeLitros(),
+              let pct = percentual, pct >= 0 else { return nil }
+        return (maxLitros * pct / 100 * 100).rounded() / 100
+    }
+
+    /// Campos do modo avançado preenchidos de forma consistente.
+    var modoAvancadoValido: Bool {
+        guard usaModoAvancado, let formato, let h = alturaCm, h > 0,
+              let densidade = densidadeKgL, densidade > 0 else { return false }
+        switch formato {
+        case .retangular:
+            guard let l = comprimentoCm, let w = larguraCm, l > 0, w > 0 else { return false }
+        case .cilindrico:
+            guard let d = diametroCm, d > 0 else { return false }
+        case .funil:
+            guard let dSup = diametroSuperiorCm, let dInf = diametroInferiorCm,
+                  dSup > 0, dInf > 0 else { return false }
+        }
+        return capacidadeCalculadaKg() != nil
+    }
+
+    /// Payload para `POST /config-recipiente` (campos simples + avançados opcionais).
+    func payloadAPI(capacidadeFinalKg: Double) -> [String: Any] {
+        var body: [String: Any] = [
+            "distancia_vazio_cm": distanciaVazioCm ?? 0,
+            "distancia_cheio_cm": distanciaCheioCm ?? 0,
+            "capacidade_kg": capacidadeFinalKg
+        ]
+        if let modoAvancado { body["modo_avancado"] = modoAvancado }
+        if let formato { body["formato"] = formato.rawValue }
+        if let comprimentoCm { body["comprimento_cm"] = comprimentoCm }
+        if let larguraCm { body["largura_cm"] = larguraCm }
+        if let alturaCm { body["altura_cm"] = alturaCm }
+        if let diametroCm { body["diametro_cm"] = diametroCm }
+        if let diametroSuperiorCm { body["diametro_superior_cm"] = diametroSuperiorCm }
+        if let diametroInferiorCm { body["diametro_inferior_cm"] = diametroInferiorCm }
+        if let densidadeKgL { body["densidade_kg_l"] = densidadeKgL }
+        if let vol = volumeLitros() { body["volume_litros"] = vol }
+        return body
     }
 }
 
@@ -94,6 +209,14 @@ enum PeriodoConsumo: String, CaseIterable, Identifiable {
         case .dia: return "Dia"
         case .semana: return "Semana"
         case .mes: return "Mês"
+        }
+    }
+
+    /// Quantos dias o gráfico reserva no eixo X (com ou sem consumo).
+    var diasNoGrafico: Int {
+        switch self {
+        case .dia, .semana: return 7
+        case .mes: return 30
         }
     }
 }
@@ -164,6 +287,20 @@ struct ConsumoResponse: Decodable {
         } else {
             consumoPorDia = []
         }
+    }
+
+    /// Intervalo fixo do eixo X para o gráfico não esticar uma única barra.
+    func intervaloGrafico(periodo: PeriodoConsumo, referencia: Date = Date()) -> ClosedRange<Date> {
+        let cal = Calendar.current
+        let ultimo = cal.startOfDay(for: referencia)
+        let primeiro = cal.date(byAdding: .day, value: -(periodo.diasNoGrafico - 1), to: ultimo) ?? ultimo
+        let fim = cal.date(byAdding: .day, value: 1, to: ultimo) ?? ultimo
+        return primeiro...fim
+    }
+
+    /// Dias com consumo > 0 e data válida (para desenhar barras sem esticar o eixo).
+    func barrasParaGrafico() -> [ConsumoDia] {
+        consumoPorDia.filter { ($0.dataDate != nil) && $0.consumo > 0 }
     }
 }
 

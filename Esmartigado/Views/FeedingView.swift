@@ -58,39 +58,83 @@ struct FeedingView: View {
         await iotService.fetchPrevisao()
     }
 
-    // MARK: - Cards de percentual e peso
+    // MARK: - Cards de percentual, volume e peso
 
     private var statusCards: some View {
         let leitura = iotService.ultimaRacao
-        return HStack(spacing: 12) {
-            metricCard(
-                title: "Nível de ração",
+        let avancado = iotService.configRecipiente?.usaModoAvancado == true
+        let itens = metricItems(leitura: leitura, avancado: avancado)
+        let colunas = avancado ? 3 : 2
+
+        return LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: colunas),
+            alignment: .center,
+            spacing: 10
+        ) {
+            ForEach(itens) { item in
+                metricCard(item: item, compact: avancado)
+            }
+        }
+    }
+
+    private struct MetricItem: Identifiable {
+        let id = UUID()
+        let title: String
+        let value: String
+        let icon: String
+        let color: Color
+    }
+
+    private func metricItems(leitura: RacaoLeitura?, avancado: Bool) -> [MetricItem] {
+        var lista: [MetricItem] = [
+            MetricItem(
+                title: avancado ? "Nível" : "Nível de ração",
                 value: percentualText(leitura),
                 icon: "chart.bar.fill",
                 color: percentualColor(leitura)
             )
-            metricCard(
-                title: "Peso estimado",
-                value: pesoText(leitura),
-                icon: "scalemass.fill",
+        ]
+        if avancado {
+            lista.append(MetricItem(
+                title: "Volume",
+                value: volumeText(leitura),
+                icon: "cube.transparent.fill",
                 color: AppTheme.accentBlue
-            )
+            ))
         }
+        lista.append(MetricItem(
+            title: avancado ? "Peso" : "Peso estimado",
+            value: pesoText(leitura),
+            icon: "scalemass.fill",
+            color: avancado ? AppTheme.primaryGreen : AppTheme.accentBlue
+        ))
+        return lista
     }
 
-    private func metricCard(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(color)
-            Text(value)
-                .font(.title.bold())
-            Text(title)
-                .font(.caption)
+    private func metricCard(item: MetricItem, compact: Bool) -> some View {
+        VStack(alignment: compact ? .center : .leading, spacing: 6) {
+            Image(systemName: item.icon)
+                .font(compact ? .body.weight(.semibold) : .title3)
+                .foregroundStyle(item.color)
+
+            Text(item.value)
+                .font(.system(size: compact ? 19 : 26, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .minimumScaleFactor(0.55)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+
+            Text(item.title)
+                .font(.caption2)
                 .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(compact ? .center : .leading)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: compact ? .center : .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .frame(maxWidth: .infinity, minHeight: compact ? 96 : 104, alignment: .top)
+        .padding(.horizontal, compact ? 8 : 14)
+        .padding(.vertical, compact ? 12 : 14)
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
@@ -262,35 +306,20 @@ struct FeedingView: View {
 
     @ViewBuilder
     private var consumoChart: some View {
-        let dias = iotService.consumo?.consumoPorDia ?? []
-        let pontos = dias.filter { $0.dataDate != nil }
+        if let resposta = iotService.consumo, !resposta.barrasParaGrafico().isEmpty {
+            let barras = resposta.barrasParaGrafico()
+            let dominio = resposta.intervaloGrafico(periodo: periodo)
 
-        if dias.isEmpty {
-            Text("Sem dados de consumo no período")
-                .font(.caption)
-                .foregroundStyle(AppTheme.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 24)
-        } else if pontos.isEmpty {
-            // Fallback categórico se as datas não forem reconhecidas.
-            Chart(dias) { dia in
-                BarMark(
-                    x: .value("Dia", dia.label),
-                    y: .value("Consumo (kg)", dia.consumo)
-                )
-                .foregroundStyle(AppTheme.primaryGreen)
-                .cornerRadius(4)
-            }
-            .frame(height: 200)
-        } else {
-            Chart(pontos) { dia in
+            Chart(barras) { dia in
                 BarMark(
                     x: .value("Dia", dia.dataDate ?? Date(), unit: .day),
-                    y: .value("Consumo (kg)", dia.consumo)
+                    y: .value("Consumo (kg)", dia.consumo),
+                    width: .ratio(0.55)
                 )
                 .foregroundStyle(AppTheme.primaryGreen)
                 .cornerRadius(4)
             }
+            .chartXScale(domain: dominio)
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day, count: strideDias)) { _ in
                     AxisGridLine()
@@ -308,6 +337,24 @@ struct FeedingView: View {
                 }
             }
             .frame(height: 200)
+        } else if let dias = iotService.consumo?.consumoPorDia, !dias.isEmpty {
+            // Fallback categórico se as datas não forem reconhecidas.
+            Chart(dias.filter { $0.consumo > 0 }) { dia in
+                BarMark(
+                    x: .value("Dia", dia.label),
+                    y: .value("Consumo (kg)", dia.consumo),
+                    width: .ratio(0.55)
+                )
+                .foregroundStyle(AppTheme.primaryGreen)
+                .cornerRadius(4)
+            }
+            .frame(height: 200)
+        } else {
+            Text("Sem dados de consumo no período")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 24)
         }
     }
 
@@ -514,6 +561,13 @@ struct FeedingView: View {
     private func pesoText(_ l: RacaoLeitura?) -> String {
         guard let kg = l?.pesoKg else { return "—" }
         return String(format: "%.1f kg", kg)
+    }
+
+    private func volumeText(_ l: RacaoLeitura?) -> String {
+        guard let vol = iotService.configRecipiente?.volumeAtualLitros(percentual: l?.percentualRacao) else {
+            return "—"
+        }
+        return String(format: "%.1f L", vol)
     }
 }
 
