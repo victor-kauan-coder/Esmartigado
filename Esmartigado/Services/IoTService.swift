@@ -21,6 +21,8 @@ final class IoTService: ObservableObject {
     @Published var alarmes: [String] = []
     @Published var configRecipiente: ConfigRecipiente?
     @Published var consumo: ConsumoResponse?
+    /// Consumo medido pelo sensor hoje (`GET /consumo?periodo=dia`).
+    @Published var consumoDiario: ConsumoResponse?
     @Published var previsao: PrevisaoConsumo?
     @Published var presencaGado: PresencaGado?
 
@@ -45,9 +47,8 @@ final class IoTService: ObservableObject {
         do {
             let lista = try await api.listar()
             animais = lista
-            let status = makeCorralStatus(from: lista)
-            corralStatus = status
-            dashboard = mapToDashboard(status)
+            corralStatus = makeCorralStatus(from: lista)
+            updateDashboard()
             isConnected = true
             lastError = nil
         } catch {
@@ -203,6 +204,18 @@ final class IoTService: ObservableObject {
     func fetchConsumo(periodo: PeriodoConsumo) async {
         if let resp = try? await racaoAPI.consumo(periodo: periodo) {
             consumo = resp
+            if periodo == .dia {
+                consumoDiario = resp
+                updateDashboard()
+            }
+        }
+    }
+
+    /// Busca o consumo de ração medido hoje (sensor) e atualiza o dashboard.
+    func fetchConsumoDiario() async {
+        if let resp = try? await racaoAPI.consumo(periodo: .dia) {
+            consumoDiario = resp
+            updateDashboard()
         }
     }
 
@@ -222,13 +235,20 @@ final class IoTService: ObservableObject {
                 await self?.fetchAnimais()
                 await self?.fetchRacao()
                 await self?.fetchPresenca()
+                await self?.fetchConsumoDiario()
             }
         }
         Task {
             await fetchAnimais()
             await fetchRacao()
             await fetchPresenca()
+            await fetchConsumoDiario()
         }
+    }
+
+    private func updateDashboard() {
+        guard let status = corralStatus else { return }
+        dashboard = mapToDashboard(status)
     }
 
     // MARK: - Derivação dos dados a partir dos animais
@@ -236,7 +256,7 @@ final class IoTService: ObservableObject {
     /// Constrói um `CorralStatus` agregado a partir da lista de animais.
     private func makeCorralStatus(from animais: [Animal]) -> CorralStatus {
         let total = animais.count
-        let consumoDiario = animais.reduce(0) { $0 + $1.consumoDiario }
+        let consumoMeta = animais.reduce(0) { $0 + $1.consumoDiario }
         let receita = animais.reduce(0) { $0 + $1.lucroEstimado }
 
         let alertas = animais
@@ -256,8 +276,8 @@ final class IoTService: ObservableObject {
             animalsInCorral: total,
             monitoredOnline: total,
             feedScheduled: total,
-            feedConsumptionKg: consumoDiario,
-            feedGoalKg: consumoDiario,
+            feedConsumptionKg: 0,
+            feedGoalKg: consumoMeta,
             monthlyRevenue: receita,
             alerts: alertas,
             recentActivities: [],
@@ -267,9 +287,10 @@ final class IoTService: ObservableObject {
     }
 
     private func mapToDashboard(_ status: CorralStatus) -> DashboardData {
-        let feedPct = status.feedGoalKg > 0
-            ? status.feedConsumptionKg / status.feedGoalKg
-            : 0
+        let consumoReal = consumoDiario?.total ?? 0
+        let metaDiaria = status.feedGoalKg
+        let feedPct = metaDiaria > 0 ? min(consumoReal / metaDiaria, 1) : 0
+        let consumoSubtitle = consumoDiario != nil ? "Medido hoje" : "Aguardando leitura"
 
         return DashboardData(
             userName: dashboard.userName,
@@ -283,16 +304,19 @@ final class IoTService: ObservableObject {
                                value: String(format: "%.0f kg", averageWeight()), label: "Peso médio",
                                subtitle: "Por animal"),
                 OverviewMetric(icon: "leaf.fill", iconColor: "blue",
-                               value: String(format: "%.0f kg", status.feedConsumptionKg), label: "Consumo diário",
-                               subtitle: "Total do rebanho"),
+                               value: String(format: "%.1f kg", consumoReal), label: "Consumo diário",
+                               subtitle: consumoSubtitle),
                 OverviewMetric(icon: "dollarsign.circle.fill", iconColor: "purple",
                                value: formatCurrency(totalMarketValue()), label: "Valor de mercado",
                                subtitle: "Rebanho total")
             ],
             indicators: [
                 DailyIndicator(title: "Consumo de ração",
-                               value: String(format: "%.0f kg", status.feedConsumptionKg),
-                               progress: feedPct, progressLabel: String(format: "%.0f%% da meta diária", feedPct * 100),
+                               value: String(format: "%.1f kg", consumoReal),
+                               progress: feedPct,
+                               progressLabel: metaDiaria > 0
+                                   ? String(format: "%.0f%% da meta diária", feedPct * 100)
+                                   : "Meta não definida",
                                trend: nil, trendUp: nil),
                 DailyIndicator(title: "Lucro estimado",
                                value: formatCurrency(status.monthlyRevenue),
