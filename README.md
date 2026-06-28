@@ -1,56 +1,329 @@
+<div align="center">
+
+<img src="https://img.shields.io/badge/iOS-17%2B-000000?style=for-the-badge&logo=apple&logoColor=white"/>
+<img src="https://img.shields.io/badge/Swift-5.9-F05138?style=for-the-badge&logo=swift&logoColor=white"/>
+<img src="https://img.shields.io/badge/SwiftUI-0066CC?style=for-the-badge&logo=swift&logoColor=white"/>
+<img src="https://img.shields.io/badge/Node--RED-8F0000?style=for-the-badge&logo=nodered&logoColor=white"/>
+<img src="https://img.shields.io/badge/ESP32-IoT-E7352C?style=for-the-badge&logo=espressif&logoColor=white"/>
+
+<br/><br/>
+
 # Esmartigado
 
-Criar gado ainda é uma atividade tocada muito no instinto. O produtor sabe quando a ração está acabando porque foi até o cocho olhar, percebe que um animal sumiu quando dá falta dele no fim do dia e descobre o custo real da engorda só quando fecha a conta no fim do mês. O Esmartigado nasce dessa lacuna: trazer para a palma da mão, em tempo quase real, o que está acontecendo dentro do curral.
+**Gestão inteligente de rebanho na palma da sua mão**
 
-A ideia é simples de explicar e ambiciosa de executar. Sensores espalhados pela propriedade medem presença dos animais e o nível de ração, mandam isso para um servidor e o aplicativo transforma esses números em decisão. Em vez de planilha e palpite, o produtor abre o celular e enxerga onde está cada lote, quanto de ração resta, quanto está sendo consumido por dia e para onde o custo está indo.
+Sensores reais. Dados em tempo real. Decisões mais lucrativas.
 
-## O que o app faz hoje
+</div>
 
-A tela inicial concentra a visão geral do rebanho e os indicadores do dia, pensada para responder rápido à pergunta de sempre, "está tudo bem com os animais?". O rastreamento mostra um mapa do curral com as zonas monitoradas e a presença detectada em cada ponto, usando o MapKit.
+---
 
-A parte de alimentação é hoje a mais completa. Ela exibe o nível atual da ração em porcentagem e em quilos, guarda o histórico das medições e deixa o produtor configurar a calibração do recipiente e horários para medições automáticas. O consumo aparece em gráfico por dia, semana e mês, e há uma estimativa que olha a tendência recente com uma regressão linear leve e considera a sazonalidade da semana, então a previsão não é só uma média preguiçosa e sim algo que tenta antecipar a próxima reposição. Quando o sensor percebe um animal parado na frente do cocho, o app segura o comando de medir naquele instante para não registrar uma leitura falsa.
+## O problema que resolvemos
 
-No financeiro o app reúne os custos do rebanho e calcula o gasto de alimentação a partir do consumo realmente medido, em vez de uma estimativa fixa. É o primeiro passo para responder a pergunta que decide o negócio: quanto custa, de fato, engordar cada animal.
+Criar gado ainda é uma atividade tocada muito no instinto. O produtor sabe quando a ração está acabando porque foi até o cocho olhar, percebe que um animal sumiu quando dá falta dele no fim do dia, e descobre o custo real da engorda só quando fecha a conta no fim do mês.
 
-## Por que isso pode virar produto
+**O Esmartigado nasce dessa lacuna:** trazer para a palma da mão, em tempo quase real, o que está acontecendo dentro do curral — sem planilha, sem palpite, sem surpresa.
 
-Pecuária é um mercado gigante e ainda pouco digitalizado fora das grandes fazendas. A maior parte das soluções de gestão mira o produtor grande, com brincos eletrônicos caros e integrações complexas. O Esmartigado aposta no pequeno e médio produtor, com hardware acessível e um aplicativo direto, que entrega valor já na primeira semana de uso sem exigir que ninguém vire especialista em tecnologia. A partir do consumo, da presença e do custo já capturados, o caminho natural é evoluir para alertas inteligentes, recomendação de reposição de ração e projeções de custo por arroba, que é onde mora o ganho real para quem vive da margem.
+---
 
-## Como foi construído
+## Telas do Aplicativo
 
-O aplicativo é feito em SwiftUI com Swift Charts para os gráficos e MapKit para o mapa, rodando em iOS 17 ou superior. A camada de dados usa Combine junto de async/await. No centro está o `IoTService`, que mantém o estado da aplicação, faz polling a cada dez segundos e publica os dados prontos para as telas, enquanto `AnimaisAPI` e `RacaoAPI` cuidam apenas das chamadas de rede.
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="assets/screen1.png" alt="Tela Início" width="100%"/>
+      <br/><sub><b>Início — Visão Geral do Rebanho</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="assets/screen2.png" alt="Rastreamento" width="100%"/>
+      <br/><sub><b>Rastreamento — Mapa do Curral</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="assets/screen3.png" alt="Alimentação" width="100%"/>
+      <br/><sub><b>Alimentação — Nível de Ração em Tempo Real</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="assets/screen4.png" alt="Histórico e Configuração" width="100%"/>
+      <br/><sub><b>Histórico e Configuração do Recipiente</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="assets/screen5.png" alt="Financeiro" width="70%"/>
+      <br/><sub><b>Financeiro — Custos e Previsão de Consumo</b></sub>
+    </td>
+  </tr>
+</table>
 
-O backend é um fluxo no Node-RED que recebe os dados dos sensores ESP32 e Arduino e expõe rotas HTTP, além de uma conexão por WebSocket para disparar medições sob demanda. Como esse fluxo ainda está em evolução, a leitura dos JSONs foi escrita de forma tolerante, aceitando campos ausentes ou em formatos diferentes sem quebrar a tela.
+---
 
-## Rodando o projeto
+## Funcionalidades
 
-Abra o `Esmartigado.xcodeproj` no Xcode, ajuste o endereço do Node-RED para o IP da máquina onde ele está rodando e dê run em um simulador ou device na mesma rede.
+### Início
+
+- Visão consolidada do rebanho com dados via API em tempo real
+- Temperatura e clima local integrados por localização
+- Consumo diário medido pelos sensores
+- Valor de mercado estimado do rebanho total
+- Indicadores do dia em destaque
+
+### Rastreamento
+
+- Sensores de presença com status e distância em tempo real
+- Mapa interativo do curral via MapKit com localização de cada animal ou lote
+- Identificação de zonas monitoradas (Entrada Principal, Entrada Secundária, Cocho)
+
+### Alimentação
+
+- Nível de ração em porcentagem e quilos estimados
+- Alertas visuais: **NORMAL / BAIXO / CRÍTICO**
+- Medição manual ou por alarme configurável
+- Gráfico de consumo por dia, semana e mês
+- Previsão inteligente com regressão linear e sazonalidade semanal
+- Proteção antifalsa leitura: a medição é segurada quando o sensor detecta animal no cocho
+
+### Histórico e Configuração
+
+- Histórico de leituras com código de cor por nível de alerta
+- Configuração do recipiente em modo simples ou avançado
+- Calibração do sensor: distância vazio/cheio e capacidade em kg
+- Alarmes de medição automática configuráveis
+
+### Financeiro
+
+- Receita do mês com variação em relação ao período anterior
+- Custos detalhados: Alimentação, Sanidade e Manutenção
+- Custo de alimentação calculado a partir do consumo realmente medido
+- Previsão da semana atual e da próxima
+- Projeção dos próximos 7 dias com gráfico de barras
+
+---
+
+## Arquitetura
+
+```
+Esmartigado/
+├── EsmartigadoApp.swift          # Ponto de entrada
+├── ContentView.swift             # Navegação principal (TabView)
+│
+├── Views/
+│   ├── HomeView.swift            # Tela inicial e dashboard
+│   ├── TrackingView.swift        # Rastreamento e mapa
+│   ├── FeedingView.swift         # Alimentação e gráficos
+│   ├── RacaoConfigView.swift     # Configuração do recipiente
+│   ├── AlarmesView.swift         # Alarmes de medição
+│   ├── FinancialView.swift       # Financeiro e projeções
+│   └── Components/
+│       └── DashboardComponents.swift
+│
+├── Models/
+│   ├── AnimalModels.swift        # Entidade Animal
+│   ├── RacaoModels.swift         # Leituras e configuração de ração
+│   ├── SensorModels.swift        # Dados dos sensores IoT
+│   ├── PresencaModels.swift      # Presença detectada
+│   └── DashboardModels.swift     # Dados agregados do dashboard
+│
+├── Services/
+│   ├── IoTService.swift          # Estado global + polling a cada 10s
+│   ├── AnimaisAPI.swift          # CRUD de animais
+│   └── RacaoAPI.swift            # Leituras, histórico, alarmes
+│
+└── Theme/
+    └── AppTheme.swift            # Paleta de cores e estilos
+```
+
+### Fluxo de dados
+
+```
+[Sensores ESP32/Arduino]
+        |  WebSocket / HTTP
+        v
+   [Node-RED Flow]  ──── REST API ────>  [IoTService]
+                                              |
+                              polling 10s     |  @Published
+                                              v
+                                      [SwiftUI Views]
+                                   HomeView / FeedingView
+                                   TrackingView / FinancialView
+```
+
+---
+
+## Stack Tecnológica
+
+| Camada           | Tecnologia                                              |
+| ---------------- | ------------------------------------------------------- |
+| App iOS          | Swift 5.9 · SwiftUI · Swift Charts · MapKit             |
+| Concorrência     | Combine + async/await                                   |
+| Backend IoT      | Node-RED                                                |
+| Hardware         | ESP32 / Arduino · Sensor ultrassônico HC-SR04           |
+| Protocolo        | HTTP REST (rede local) · WebSocket (medições on-demand) |
+| Requisito mínimo | iOS 17+                                                 |
+
+---
+
+## API Reference
+
+Rotas expostas pelo Node-RED e consumidas pelo app:
+
+| Método     | Rota                 | Descrição                                            |
+| ---------- | -------------------- | ---------------------------------------------------- |
+| `GET`      | `/getanimais`        | Lista o rebanho cadastrado                           |
+| `POST`     | `/postanimais`       | Cadastra novo animal                                 |
+| `PUT`      | `/animais/{id}`      | Atualiza dados de um animal                          |
+| `DELETE`   | `/animais/{id}`      | Remove animal                                        |
+| `GET`      | `/ultimo`            | Última leitura de ração                              |
+| `GET`      | `/historico`         | Histórico de leituras                                |
+| `POST`     | `/medir`             | Dispara medição manual                               |
+| `GET/POST` | `/alarme`            | Consulta ou configura horários de medição automática |
+| `GET/POST` | `/config-recipiente` | Calibração do recipiente                             |
+| `GET`      | `/consumo?periodo=`  | Consumo por `dia`, `semana` ou `mes`                 |
+| `GET`      | `/presenca`          | Estado atual dos sensores de presença                |
+
+---
+
+## Como Rodar o Projeto
+
+### Pré-requisitos
+
+- Xcode 15+ com iOS 17 SDK
+- Node-RED rodando na mesma rede local
+- Sensores ESP32/Arduino conectados (ou simulados via Node-RED)
+
+### Passo a passo
+
+**1. Clone o repositório**
+
+```bash
+git clone https://github.com/victor-kauan-coder/Esmartigado.git
+cd Esmartigado
+```
+
+**2. Configure o endereço do Node-RED**
+
+Abra `Esmartigado/Services/IoTService.swift` e ajuste o IP:
 
 ```swift
 enum IoTConfig {
-    static let baseURL = "http://192.168.128.65:1880"
+    static let baseURL = "http://SEU_IP_AQUI:1880"
 }
 ```
 
-As chamadas acontecem em HTTP dentro da rede local, então o `Info.plist` já libera conexão local. Para uso fora da rede da propriedade o próximo passo é colocar tudo atrás de HTTPS.
+**3. Importe o fluxo Node-RED**
 
-## Referência das rotas
+No Node-RED, importe o arquivo `flowEsmartigado/flow_esmartigado.json` via **Menu → Import**.
 
-Para quem for mexer na integração, as rotas consumidas pelo app são:
+**4. Rode o app**
 
+Abra `Esmartigado.xcodeproj` no Xcode, selecione um simulador ou device na mesma rede e pressione `Cmd + R`.
 
-| Método   | Rota                 | Função                         |
-| -------- | -------------------- | ------------------------------ |
-| GET      | `/getanimais`        | lista o rebanho                |
-| POST     | `/postanimais`       | cadastra animal                |
-| PUT      | `/animais/{id}`      | atualiza animal                |
-| DELETE   | `/animais/{id}`      | remove animal                  |
-| GET      | `/ultimo`            | última leitura de ração        |
-| GET      | `/historico`         | leituras anteriores            |
-| POST     | `/medir`             | dispara uma medição            |
-| GET/POST | `/alarme`            | horários de medição automática |
-| GET/POST | `/config-recipiente` | calibração do recipiente       |
-| GET      | `/consumo?periodo=`  | consumo por dia, semana ou mês |
-| GET      | `/presenca`          | estado do sensor de presença   |
+> As chamadas são HTTP dentro da rede local. O `Info.plist` já está configurado para permitir conexões locais. Para uso externo à rede da propriedade, o próximo passo é adicionar HTTPS.
 
+---
 
+## Hardware — Sensor Ultrassônico
+
+O sensor de ração usa um HC-SR04 conectado ao ESP32, com filtragem de mediana em 3 leituras para eliminar ruídos causados pela interferência do Wi-Fi:
+
+```cpp
+noInterrupts();
+digitalWrite(trigPin, HIGH);
+delayMicroseconds(10);
+digitalWrite(trigPin, LOW);
+long duracao = pulseIn(echoPin, HIGH, 30000);
+interrupts();
+```
+
+O código completo dos dispositivos está em `nodeMCU/`.
+
+---
+
+## Roadmap
+
+- [ ] Alertas push via APNs quando ração atinge nível crítico
+- [ ] Recomendação automática de reposição baseada na previsão de consumo
+- [ ] Projeção de custo por arroba
+- [ ] Suporte a múltiplos currais e fazendas
+- [ ] HTTPS para acesso remoto fora da rede local
+- [ ] Dashboard web complementar
+
+---
+
+## Por que o Esmartigado pode virar produto
+
+Pecuária é um mercado gigante e ainda pouco digitalizado fora das grandes fazendas. A maior parte das soluções de gestão mira o produtor grande, com brincos eletrônicos caros e integrações complexas.
+
+O Esmartigado aposta no pequeno e médio produtor: hardware acessível, aplicativo direto, valor entregue já na primeira semana — sem exigir que ninguém vire especialista em tecnologia. A partir do consumo, da presença e do custo já capturados, o caminho natural é evoluir para alertas inteligentes, recomendação de reposição de ração e projeções de custo por arroba — que é onde mora o ganho real para quem vive da margem.
+
+---
+
+<div align="center">
+
+Tecnologia que transforma dados em eficiência e sustentabilidade.
+
+</div>
+
+## Colaboradores
+
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center" style="padding: 20px;">
+      <a href="https://github.com/victor-kauan-coder">
+        <img src="https://github.com/victor-kauan-coder.png" width="120px" style="border-radius: 50%;" alt="Victor Kauan"/>
+        <br/><br/>
+        <b>Victor Kauan</b>
+        <br/>
+        <sub>
+          <a href="https://github.com/victor-kauan-coder">
+            <img src="https://img.shields.io/badge/GitHub-victor--kauan--coder-181717?style=flat&logo=github"/>
+          </a>
+        </sub>
+      </a>
+    </td>
+    <td align="center" style="padding: 20px;">
+      <a href="https://github.com/annalwisa">
+        <img src="https://github.com/annalwisa.png" width="120px" style="border-radius: 50%;" alt="Anna Lwisa"/>
+        <br/><br/>
+        <b>Anna Lwisa</b>
+        <br/>
+        <sub>
+          <a href="https://github.com/annalwisa">
+            <img src="https://img.shields.io/badge/GitHub-annalwisa-181717?style=flat&logo=github"/>
+          </a>
+        </sub>
+      </a>
+    </td>
+    <td align="center" style="padding: 20px;">
+      <a href="https://github.com/VitorFichel">
+        <img src="https://github.com/VitorFichel.png" width="120px" style="border-radius: 50%;" alt="Vitor Fichel"/>
+        <br/><br/>
+        <b>Vitor Fichel</b>
+        <br/>
+        <sub>
+          <a href="https://github.com/VitorFichel">
+            <img src="https://img.shields.io/badge/GitHub-VitorFichel-181717?style=flat&logo=github"/>
+          </a>
+        </sub>
+      </a>
+    </td>
+    <td align="center" style="padding: 20px;">
+      <a href="https://github.com/Jamelao30">
+        <img src="https://github.com/Jamelao30.png" width="120px" style="border-radius: 50%;" alt="Jamelao30"/>
+        <br/><br/>
+        <b>Jamelao30</b>
+        <br/>
+        <sub>
+          <a href="https://github.com/Jamelao30">
+            <img src="https://img.shields.io/badge/GitHub-Jamelao30-181717?style=flat&logo=github"/>
+          </a>
+        </sub>
+      </a>
+    </td>
+  </tr>
+</table>
+
+</div>
