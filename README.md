@@ -8,7 +8,9 @@
 
 <br/><br/>
 
-# Esmartigado
+<div align="center">
+<img src="assets/logo.png" alt="Logo Esmartigado" width="50%" height="50%">
+</div>
 
 **Gestão inteligente de rebanho na palma da sua mão**
 
