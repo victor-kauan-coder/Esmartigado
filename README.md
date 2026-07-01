@@ -288,9 +288,9 @@ Tecnologia que transforma dados em eficiência e sustentabilidade.
     </td>
     <td align="center" style="padding: 20px;">
       <a href="https://github.com/annalwisa">
-        <img src="https://github.com/annalwisa.png" width="120px" style="border-radius: 50%;" alt="Anna Lwisa"/>
+        <img src="https://github.com/annalwisa.png" width="120px" style="border-radius: 50%;" alt="Anna Luisa"/>
         <br/><br/>
-        <b>Anna Lwisa</b>
+        <b>Anna Luisa</b>
         <br/>
         <sub>
           <a href="https://github.com/annalwisa">
